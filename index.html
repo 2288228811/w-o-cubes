@@ -217,8 +217,8 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
 </style>
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  import { getFirestore, doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
+  
 
   const firebaseConfig = {
     apiKey: "AIzaSyCvGpPqYtUXL3thvJHTHyAGlM_NEM_fhfk",
@@ -231,7 +231,7 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
 
   const app = initializeApp(firebaseConfig);
   window.auth = getAuth(app);
-  window.db = getFirestore(app);
+  window.db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
   window.authFns = { createUserWithEmailAndPassword, signInWithEmailAndPassword };
   window.firestoreFns = { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, serverTimestamp };
 
