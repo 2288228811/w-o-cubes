@@ -1374,19 +1374,22 @@ function mpGuestPlace(x, y){
 // ----- HOST: eigenen Zustand periodisch an alle Mitspieler senden -----
 function mpBroadcastState(){
   const now = Date.now();
-  if(now - mpLastBroadcast < 120) return;
+  if(now - mpLastBroadcast < 90) return;
   mpLastBroadcast = now;
   const { ref, update } = window.rtdbFns;
   update(ref(window.rtdb, `lobbies/${mpState.lobbyId}`), {
     state: {
       castleHp: castle.hp, gold, timeSurvived, phase, phaseTimer, gameOver,
       isNight, bossMessage, bossMessageTimer,
-      units, enemies, arrows, enemyArrows, bombs, toxicBalls, iceBalls, healPotions
+      units, enemies, arrows, enemyArrows, bombs, toxicBalls, iceBalls, healPotions,
+      particles, shards
     }
   }).catch(err => console.error("MP Broadcast Fehler:", err));
 }
 
 // ----- GAST: empfangenen Host-Zustand in die lokalen Render-Variablen übernehmen -----
+let mpSnapA = null, mpSnapB = null, mpSnapTime = 0, mpSnapInterval = 100;
+
 function mpApplyRemoteState(state){
   if(!state) return;
   castle.hp = state.castleHp ?? castle.hp;
@@ -1397,15 +1400,39 @@ function mpApplyRemoteState(state){
   isNight = state.isNight ?? isNight;
   bossMessage = state.bossMessage ?? bossMessage;
   bossMessageTimer = state.bossMessageTimer ?? bossMessageTimer;
-  units = state.units || [];
-  enemies = state.enemies || [];
   arrows = state.arrows || [];
   enemyArrows = state.enemyArrows || [];
   bombs = state.bombs || [];
   toxicBalls = state.toxicBalls || [];
   iceBalls = state.iceBalls || [];
   healPotions = state.healPotions || [];
+  particles = state.particles || [];
+  shards = state.shards || [];
+
+  const now = Date.now();
+  mpSnapInterval = mpSnapB ? Math.min(400, Math.max(60, now - mpSnapTime)) : 100;
+  mpSnapA = mpSnapB || { units: state.units||[], enemies: state.enemies||[] };
+  mpSnapB = { units: state.units||[], enemies: state.enemies||[] };
+  mpSnapTime = now;
+
   if(state.gameOver && !gameOver){ gameOver = true; triggerGameOver(); }
+}
+
+// Interpoliert Positionen zwischen den letzten beiden Snapshots -> weiche Bewegung
+// statt eines Sprungs alle ~90ms, obwohl nur alle ~90ms neue Daten ankommen.
+function mpLerpArray(a, b, t){
+  if(!a || a.length !== b.length) return b;
+  return b.map((obj,i)=>{
+    const prev = a[i];
+    if(!prev || prev.type !== obj.type) return obj;
+    return Object.assign({}, obj, { x: prev.x + (obj.x-prev.x)*t, y: prev.y + (obj.y-prev.y)*t });
+  });
+}
+function mpInterpolateRender(){
+  if(!mpSnapB) return;
+  const t = Math.min(1, (Date.now()-mpSnapTime)/mpSnapInterval);
+  units = mpLerpArray(mpSnapA.units, mpSnapB.units, t);
+  enemies = mpLerpArray(mpSnapA.enemies, mpSnapB.enemies, t);
 }
 
 function openChestShop(){
@@ -1690,25 +1717,25 @@ function openChest(type){
   coins += wonCoins;
   document.getElementById("coinText").textContent = coins;
 
-  const rewards = [{icon:"Coin_Icon.png", amount:wonCoins}];
+  const rewards = [{icon:"Coin_icon.png", amount:wonCoins}];
 
   if(Math.random() < loot.gemChance){
     const wonGems = Math.floor(Math.random()*(loot.gemMax-loot.gemMin+1))+loot.gemMin;
     gems += wonGems;
     document.getElementById("gemText").textContent = gems;
-    rewards.push({icon:"Gem_Icon.png", amount:wonGems});
+    rewards.push({icon:"Gem_icon.png", amount:wonGems});
   }
   if(Math.random() < loot.ticketChance){
     const wonTickets = Math.floor(Math.random()*(loot.ticketMax-loot.ticketMin+1))+loot.ticketMin;
     tickets += wonTickets;
     document.getElementById("ticketText").textContent = tickets;
-    rewards.push({icon:"Ticket._Icon.png", amount:wonTickets});
+    rewards.push({icon:"Ticket._icon.png", amount:wonTickets});
   }
   if(loot.diamondChance && Math.random() < loot.diamondChance){
     const wonDiamonds = Math.floor(Math.random()*(loot.diamondMax-loot.diamondMin+1))+loot.diamondMin;
     diamonds += wonDiamonds;
     document.getElementById("diamondText").textContent = diamonds;
-    rewards.push({icon:"Diamond_Icon.png", amount:wonDiamonds});
+    rewards.push({icon:"Diamond_icon.png", amount:wonDiamonds});
   }
 
   saveGame();
@@ -2209,7 +2236,7 @@ function updateArmoryVisibility(){
   }
 }
 
-//____________________________<<<<<<<entyties 
+//____________________________<<<<<<<
 const castle={ x:canvas.width/2, y:canvas.height/2, r:70, hp:1000, maxHp:1500 };
 let units=[], enemies=[], arrows=[], enemyArrows=[], bombs=[], particles=[], toxicBalls=[], iceBalls=[], shards=[], healPotions=[];
 
@@ -2293,13 +2320,14 @@ function showBossMessage(text){ bossMessage=text; bossMessageTimer=300; }
 function getEnemyImg(e){
   return e.type==="red_boss"?TEX.red_boss:e.type==="fighter"?TEX.fighter:e.type==="enemyBombo"?TEX.enemyBombo:e.type==="enemyArcher"?TEX.enemyArcher:e.type==="toxic"?TEX.toxic:e.type==="slime"?TEX.slime:e.type==="dasher"?TEX.dasher:e.type==="elite"?TEX.elite:e.type==="iceMage"?TEX.iceMage:e.type==="laserDrone"?TEX.laserDrone:TEX.enemy;
 }
-function shatterSprite(img, x, y, size){
-  if(!cfg.shardsOn || !img.width) return;
+function shatterSprite(key, x, y, size){
+  const img = TEX[key];
+  if(!cfg.shardsOn || !img || !img.width) return;
   const grid=3;
   const sw=img.width/grid, sh=img.height/grid, dw=size/grid, dh=size/grid;
   for(let gx=0;gx<grid;gx++)for(let gy=0;gy<grid;gy++){
     const angle=Math.random()*Math.PI*2, speed=1+Math.random()*3;
-    shards.push({img,sx:gx*sw,sy:gy*sh,sw,sh,dw,dh,
+    shards.push({key,sx:gx*sw,sy:gy*sh,sw,sh,dw,dh,
       x:x-size/2+gx*dw+dw/2, y:y-size/2+gy*dh+dh/2,
       vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed-1,
       rot:0, vrot:(Math.random()-0.5)*0.3,
@@ -2307,9 +2335,9 @@ function shatterSprite(img, x, y, size){
   }
 }
 function shatterEnemy(e){
-  const img=getEnemyImg(e);
+  const key=e.type==="red_boss"?"red_boss":e.type==="fighter"?"fighter":e.type==="enemyBombo"?"enemyBombo":e.type==="enemyArcher"?"enemyArcher":e.type==="toxic"?"toxic":e.type==="slime"?"slime":e.type==="dasher"?"dasher":e.type==="elite"?"elite":e.type==="iceMage"?"iceMage":e.type==="laserDrone"?"laserDrone":"enemy";
   const size=e.type==="red_boss"?140:32;
-  shatterSprite(img, e.x, e.y, size);
+  shatterSprite(key, e.x, e.y, size);
 }
 function getUnitImg(u){
   let img=TEX[u.type];
@@ -2317,9 +2345,10 @@ function getUnitImg(u){
   return img;
 }
 function shatterUnit(u){
-  const img=getUnitImg(u);
+  let key=u.type;
+  if(u.type.startsWith("wall")&&u.hp<u.maxHp/2)key=u.type+"_broken";
   const size=u.type.startsWith("wall")?48:32;
-  shatterSprite(img, u.x, u.y, size);
+  shatterSprite(key, u.x, u.y, size);
 }
 function spawnBanner(){ enemies.push({type:"banner",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:180,speed:0.4,aura:140}); }
 
@@ -2676,7 +2705,7 @@ toxicBalls.forEach(b=>{ctx.drawImage(TEX.toxicBall,b.x-8,b.y-8,16,16);});
     ctx.globalAlpha=Math.max(0,s.life/s.maxLife);
     ctx.translate(s.x,s.y);
     ctx.rotate(s.rot);
-    ctx.drawImage(s.img,s.sx,s.sy,s.sw,s.sh,-s.dw/2,-s.dh/2,s.dw,s.dh);
+    ctx.drawImage(TEX[s.key],s.sx,s.sy,s.sw,s.sh,-s.dw/2,-s.dh/2,s.dw,s.dh);
     ctx.restore();
   });
   ctx.globalAlpha=1;
@@ -2789,7 +2818,8 @@ document.getElementById("diamondText").textContent = diamonds;
 updateArmoryVisibility();
 (function loop(){
   if(mpActive && !mpIsHost){
-    draw(); // Gast: nur rendern, Zustand kommt vom Host über RTDB
+    mpInterpolateRender(); // Gast: Positionen zwischen den letzten 2 Snapshots glätten
+    draw();
   } else {
     update();
     draw();
