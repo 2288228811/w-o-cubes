@@ -290,7 +290,7 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, initializeFirestore, doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
-  
+  import { getDatabase, ref, set, update, get, push, remove, onValue, onDisconnect, off, serverTimestamp as rtdbServerTimestamp, onChildAdded } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyCvGpPqYtUXL3thvJHTHyAGlM_NEM_fhfk",
@@ -298,14 +298,17 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
     projectId: "war-of-cubes",
     storageBucket: "war-of-cubes.firebasestorage.app",
     messagingSenderId: "272390902448",
-    appId: "1:272390902448:web:098dabb37e3d9273ede175"
+    appId: "1:272390902448:web:098dabb37e3d9273ede175",
+    databaseURL: "https://war-of-cubes-default-rtdb.europe-west1.firebasedatabase.app"
   };
 
   const app = initializeApp(firebaseConfig);
   window.auth = getAuth(app);
   window.db = initializeFirestore(app, { experimentalAutoDetectLongPolling: true });
+  window.rtdb = getDatabase(app);
   window.authFns = { createUserWithEmailAndPassword, signInWithEmailAndPassword };
   window.firestoreFns = { doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, serverTimestamp };
+  window.rtdbFns = { ref, set, update, get, push, remove, onValue, onDisconnect, off, serverTimestamp: rtdbServerTimestamp, onChildAdded };
 
   window.firebaseReady = true;
   window.dispatchEvent(new Event("firebaseReady"));
@@ -397,6 +400,7 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
   <div id="modeSelectFresh" style="display:flex; flex-direction:column; align-items:center; gap:20px;">
     <button onclick="startGame()" style="padding:16px 40px; font-family:monospace; font-size:18px; border:3px solid #ff4400; background:transparent; color:#fff; cursor:pointer;">Standard</button>
     <button onclick="openCustomSetup()" style="padding:16px 40px; font-family:monospace; font-size:18px; border:3px solid #4488ff; background:transparent; color:#fff; cursor:pointer;">Benutzerdefiniert</button>
+    <button onclick="openMultiplayerMenu()" style="padding:16px 40px; font-family:monospace; font-size:18px; border:3px solid #44ff44; background:transparent; color:#fff; cursor:pointer;">🌐 Multiplayer</button>
     <button onclick="closeModeSelect()" style="margin-top:20px; padding:8px 20px; font-family:monospace; background:transparent; color:#aaa; border:1px solid #666; cursor:pointer;">Abbrechen</button>
   </div>
   <div id="modeSelectResume" style="display:none; flex-direction:column; align-items:center; gap:20px;">
@@ -460,6 +464,50 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
     <button onclick="closeCustomSetup()" style="padding:14px 36px; font-family:monospace; background:transparent; color:#aaa; border:1px solid #666; cursor:pointer;">Zurück</button>
   </div>
 </div>
+
+<!-- MULTIPLAYER: LOBBY-LISTE -->
+<div id="mpMenu" style="display:none; position:fixed; inset:0; background:rgba(10,10,15,0.97); z-index:1002; flex-direction:column; align-items:center; padding:20px; box-sizing:border-box; color:white; font-family:monospace;">
+  <h2 style="margin-bottom:4px;">🌐 MULTIPLAYER</h2>
+  <p style="color:#888; font-size:12px; margin-top:0;">Koop – gemeinsam die Burg verteidigen</p>
+
+  <button onclick="showCreateLobbyPanel()" style="padding:12px 28px; font-family:monospace; font-size:16px; border:3px solid #44ff44; background:transparent; color:#fff; cursor:pointer; margin:10px 0 16px 0;">➕ Lobby erstellen</button>
+
+  <div id="mpCreatePanel" style="display:none; flex-direction:column; align-items:center; gap:10px; background:rgba(255,255,255,0.05); border:1px solid #444; padding:16px; border-radius:8px; margin-bottom:16px; width:100%; max-width:340px; box-sizing:border-box;">
+    <div>Max. Spieler:</div>
+    <div style="display:flex; gap:8px;">
+      <button class="mpMaxBtn" onclick="selectMaxPlayers(2)" style="padding:8px 16px; font-family:monospace; border:2px solid #4488ff; background:transparent; color:#fff; cursor:pointer;">2</button>
+      <button class="mpMaxBtn" onclick="selectMaxPlayers(3)" style="padding:8px 16px; font-family:monospace; border:2px solid #4488ff; background:transparent; color:#fff; cursor:pointer;">3</button>
+      <button class="mpMaxBtn" onclick="selectMaxPlayers(4)" style="padding:8px 16px; font-family:monospace; border:2px solid #4488ff; background:transparent; color:#fff; cursor:pointer;">4</button>
+    </div>
+    <div style="display:flex; gap:10px; margin-top:6px;">
+      <button onclick="createLobby()" style="padding:10px 24px; font-family:monospace; border:3px solid #44ff44; background:transparent; color:#fff; cursor:pointer;">Erstellen</button>
+      <button onclick="hideCreateLobbyPanel()" style="padding:10px 24px; font-family:monospace; border:1px solid #666; background:transparent; color:#aaa; cursor:pointer;">Abbrechen</button>
+    </div>
+  </div>
+
+  <div style="width:100%; max-width:420px; flex:1; display:flex; flex-direction:column; min-height:0;">
+    <h3 style="text-align:center; border-bottom:1px solid #444; padding-bottom:6px;">Offene Lobbys</h3>
+    <div id="mpLobbyList" style="flex:1; overflow-y:auto; display:flex; flex-direction:column; gap:8px; padding:4px;">
+      <p style="color:#888; text-align:center;">Suche Lobbys...</p>
+    </div>
+  </div>
+
+  <button onclick="closeMultiplayerMenu()" style="margin-top:16px; padding:8px 20px; font-family:monospace; background:transparent; color:#aaa; border:1px solid #666; cursor:pointer;">Zurück</button>
+</div>
+
+<!-- MULTIPLAYER: WARTERAUM -->
+<div id="mpLobbyRoom" style="display:none; position:fixed; inset:0; background:rgba(10,10,15,0.98); z-index:1003; flex-direction:column; align-items:center; justify-content:center; padding:20px; box-sizing:border-box; color:white; font-family:monospace;">
+  <h2 id="mpRoomTitle">LOBBY</h2>
+  <div id="mpRoomPlayers" style="display:flex; flex-wrap:wrap; gap:16px; justify-content:center; margin:20px 0; max-width:420px;"></div>
+  <div id="mpRoomStatus" style="color:#aaa; font-size:13px; margin-bottom:16px;">Warte auf Host...</div>
+  <div style="display:flex; gap:16px;">
+    <button id="mpStartBtn" onclick="startMultiplayerGame()" style="display:none; padding:14px 32px; font-family:monospace; font-size:16px; border:3px solid #44ff44; background:transparent; color:#fff; cursor:pointer;">▶ Beginnen</button>
+    <button onclick="leaveLobby()" style="padding:14px 32px; font-family:monospace; font-size:16px; border:3px solid #ff4400; background:transparent; color:#fff; cursor:pointer;">Verlassen</button>
+  </div>
+</div>
+
+<!-- MULTIPLAYER: START-VERDUNKLUNG -->
+<div id="mpStartOverlay" style="display:none; position:fixed; inset:0; background:#000; z-index:1004; opacity:0; transition:opacity 0.8s;"></div>
 
 <!-- SPIEL UI -->
 <div id="ui">
@@ -1027,6 +1075,7 @@ function startGame(){
 
 function exitToMenu(){
   gameStarted = false;
+  if(mpActive) mpEndMatch();
   if(!gameOver) checkHighscore();
   saveGame();
   document.getElementById("ui").style.display = "none";
@@ -1038,7 +1087,326 @@ function exitToMenu(){
 }
 // ================
 
+// ===== MULTIPLAYER: LOBBY-SYSTEM =====
+let mpState = null; // { lobbyId, isHost, uid, selectedMax } wenn aktiv
+let mpSelectedMax = 2;
+let mpLobbyListUnsub = null;
+let mpRoomUnsub = null;
+let mpJoinedAsGuest = false;
+let mpActive = false;      // true während eines laufenden Multiplayer-Matches
+let mpIsHost = false;
+let mpLastBroadcast = 0;
+let mpInputsListenerAttached = false;
 
+function requireLoginForMp(){
+  if(!currentUser){
+    alert("Bitte zuerst einloggen, um Multiplayer zu spielen.");
+    return false;
+  }
+  return true;
+}
+
+function openMultiplayerMenu(){
+  if(!requireLoginForMp()) return;
+  closeModeSelect();
+  document.getElementById("mpMenu").style.display = "flex";
+  hideCreateLobbyPanel();
+  const { ref, onValue } = window.rtdbFns;
+  const lobbiesRef = ref(window.rtdb, "lobbies");
+  mpLobbyListUnsub = onValue(lobbiesRef, snapshot => {
+    renderLobbyList(snapshot.val() || {});
+  });
+}
+
+function closeMultiplayerMenu(){
+  document.getElementById("mpMenu").style.display = "none";
+  if(mpLobbyListUnsub){ mpLobbyListUnsub(); mpLobbyListUnsub = null; }
+}
+
+function renderLobbyList(lobbies){
+  const el = document.getElementById("mpLobbyList");
+  const open = Object.entries(lobbies).filter(([id, l]) => l.status === "waiting");
+  if(open.length === 0){
+    el.innerHTML = "<p style='color:#888; text-align:center;'>Keine offenen Lobbys. Erstelle eine!</p>";
+    return;
+  }
+  el.innerHTML = "";
+  open.forEach(([lobbyId, l]) => {
+    const playerCount = l.players ? Object.keys(l.players).length : 0;
+    const full = playerCount >= l.maxPlayers;
+    const row = document.createElement("div");
+    row.style.cssText = "display:flex; justify-content:space-between; align-items:center; background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:10px 14px;";
+    row.innerHTML = `
+      <span>👤 ${l.hostName || "Spieler"}'s Lobby <span style="color:#888;">(${playerCount}/${l.maxPlayers})</span></span>
+      <button ${full ? "disabled" : ""} onclick="joinLobby('${lobbyId}')" style="padding:6px 14px; font-family:monospace; border:2px solid ${full ? "#666" : "#44ff44"}; background:transparent; color:${full ? "#666" : "#fff"}; cursor:${full ? "default" : "pointer"};">${full ? "Voll" : "Beitreten"}</button>
+    `;
+    el.appendChild(row);
+  });
+}
+
+function showCreateLobbyPanel(){
+  document.getElementById("mpCreatePanel").style.display = "flex";
+  selectMaxPlayers(2);
+}
+function hideCreateLobbyPanel(){
+  document.getElementById("mpCreatePanel").style.display = "none";
+}
+function selectMaxPlayers(n){
+  mpSelectedMax = n;
+  document.querySelectorAll(".mpMaxBtn").forEach(b => {
+    const isSelected = parseInt(b.textContent) === n;
+    b.style.background = isSelected ? "#4488ff" : "transparent";
+  });
+}
+
+async function createLobby(){
+  if(!requireLoginForMp()) return;
+  const { ref, set, push, serverTimestamp } = window.rtdbFns;
+  const uid = currentUser.uid;
+  const newRef = push(ref(window.rtdb, "lobbies"));
+  const lobbyId = newRef.key;
+  await set(newRef, {
+    host: uid,
+    hostName: currentUsername || "Spieler",
+    maxPlayers: mpSelectedMax,
+    status: "waiting",
+    createdAt: serverTimestamp(),
+    players: {
+      [uid]: { name: currentUsername || "Spieler", avatarData: avatarData, connected: true, joinedAt: serverTimestamp() }
+    }
+  });
+  enterLobbyRoom(lobbyId, true);
+}
+
+async function joinLobby(lobbyId){
+  if(!requireLoginForMp()) return;
+  const { ref, get, set } = window.rtdbFns;
+  const lobbyRef = ref(window.rtdb, `lobbies/${lobbyId}`);
+  const snap = await get(lobbyRef);
+  if(!snap.exists()){ alert("Lobby existiert nicht mehr."); return; }
+  const l = snap.val();
+  const playerCount = l.players ? Object.keys(l.players).length : 0;
+  if(l.status !== "waiting"){ alert("Diese Lobby hat bereits gestartet."); return; }
+  if(playerCount >= l.maxPlayers){ alert("Lobby ist voll."); return; }
+
+  const uid = currentUser.uid;
+  await set(ref(window.rtdb, `lobbies/${lobbyId}/players/${uid}`), {
+    name: currentUsername || "Spieler", avatarData: avatarData, connected: true, joinedAt: window.rtdbFns.serverTimestamp()
+  });
+  enterLobbyRoom(lobbyId, false);
+}
+
+function enterLobbyRoom(lobbyId, isHost){
+  mpState = { lobbyId, isHost, uid: currentUser.uid };
+  closeMultiplayerMenu();
+  document.getElementById("mpLobbyRoom").style.display = "flex";
+  document.getElementById("mpStartBtn").style.display = isHost ? "block" : "none";
+
+  const { ref, onValue, onDisconnect, remove } = window.rtdbFns;
+  const lobbyRef = ref(window.rtdb, `lobbies/${lobbyId}`);
+
+  // Bei Verbindungsabbruch automatisch aus der Lobby entfernen (Presence)
+  const myPlayerRef = ref(window.rtdb, `lobbies/${lobbyId}/players/${mpState.uid}`);
+  onDisconnect(myPlayerRef).remove();
+
+  mpRoomUnsub = onValue(lobbyRef, snapshot => {
+    const l = snapshot.val();
+    if(!l){
+      // Lobby wurde gelöscht (Host hat verlassen, o.ä.)
+      if(mpActive){ mpActive = false; } // Match lief bereits -> nicht mehr zurück ins Menü zwingen
+      else { alert("Die Lobby wurde geschlossen."); leaveLobby(true); }
+      return;
+    }
+    if(l.status === "playing"){
+      beginMultiplayerMatch(l);
+      if(!mpIsHost) mpApplyRemoteState(l.state);
+    } else {
+      renderLobbyRoom(l);
+    }
+  });
+}
+
+function renderLobbyRoom(l){
+  document.getElementById("mpRoomTitle").textContent = `⚔️ ${l.hostName || "Spieler"}'s LOBBY`;
+  const wrap = document.getElementById("mpRoomPlayers");
+  wrap.innerHTML = "";
+  const players = l.players || {};
+  Object.entries(players).forEach(([uid, p]) => {
+    const col = document.createElement("div");
+    col.style.cssText = "display:flex; flex-direction:column; align-items:center; gap:6px; width:70px;";
+    const avatarBox = document.createElement("div");
+    avatarBox.style.cssText = "width:56px; height:56px; border-radius:50%; overflow:hidden; position:relative; border:2px solid " + (uid === l.host ? "#ffaa00" : "#4488ff") + ";";
+    col.appendChild(avatarBox);
+    const nameEl = document.createElement("span");
+    nameEl.textContent = (p.name || "Spieler") + (uid === l.host ? " 👑" : "");
+    nameEl.style.cssText = "font-size:11px; text-align:center; color:" + (p.avatarData?.nameColor || "#fff") + ";";
+    col.appendChild(nameEl);
+    wrap.appendChild(col);
+    renderAvatarDisplay(avatarBox, p.avatarData || { bg:"#222222", emojis:[], nameColor:"#ffffff" });
+  });
+  const count = Object.keys(players).length;
+  document.getElementById("mpRoomStatus").textContent = mpState.isHost
+    ? `${count}/${l.maxPlayers} Spieler – drücke Beginnen, wenn alle bereit sind`
+    : `${count}/${l.maxPlayers} Spieler – warte auf Host...`;
+}
+
+function leaveLobby(skipRemove){
+  if(mpRoomUnsub){ mpRoomUnsub(); mpRoomUnsub = null; }
+  if(mpState && !skipRemove){
+    const { ref, remove } = window.rtdbFns;
+    if(mpState.isHost){
+      // Host verlässt vor Spielstart -> Lobby komplett schließen
+      remove(ref(window.rtdb, `lobbies/${mpState.lobbyId}`));
+    } else {
+      remove(ref(window.rtdb, `lobbies/${mpState.lobbyId}/players/${mpState.uid}`));
+    }
+  }
+  mpState = null;
+  document.getElementById("mpLobbyRoom").style.display = "none";
+  showModeSelect();
+}
+
+async function startMultiplayerGame(){
+  if(!mpState || !mpState.isHost) return;
+  const { ref, update, serverTimestamp } = window.rtdbFns;
+  await update(ref(window.rtdb, `lobbies/${mpState.lobbyId}`), { status: "playing", startedAt: serverTimestamp() });
+}
+
+function beginMultiplayerMatch(lobbyData){
+  if(mpState && mpState.matchStarted) return; // nur einmal auslösen
+  if(mpState) mpState.matchStarted = true;
+  mpActive = true;
+  mpIsHost = mpState.isHost;
+
+  const overlay = document.getElementById("mpStartOverlay");
+  overlay.style.display = "block";
+  requestAnimationFrame(()=>{ overlay.style.opacity = "1"; });
+
+  setTimeout(()=>{
+    document.getElementById("mpLobbyRoom").style.display = "none";
+    document.getElementById("menu").style.display = "none";
+    document.getElementById("ui").style.display = "block";
+    document.getElementById("menuBtn").style.display = "block";
+
+    if(mpIsHost){
+      // Host: Spielzustand wie bei einem normalen Run zurücksetzen und selbst simulieren
+      units=[]; enemies=[]; arrows=[]; enemyArrows=[]; bombs=[]; particles=[]; toxicBalls=[]; iceBalls=[]; shards=[]; healPotions=[];
+      gold=500; gameOver=false; timeSurvived=0; runCoinsEarned=0; lastCoinTime=-1;
+      bannerSpawned=false; bossSpawned=false; bossDefeated=false; bossAlive=false;
+      phase="peace"; phaseTimer=0;
+      castle.maxHp=1000; castle.hp=castle.maxHp;
+      mpAttachInputListener();
+    }
+    gameStarted = true;
+
+    overlay.style.opacity = "0";
+    setTimeout(()=>{ overlay.style.display = "none"; }, 800);
+  }, 900);
+}
+
+// ----- HOST: Inputs von Mitspielern entgegennehmen -----
+function mpAttachInputListener(){
+  if(mpInputsListenerAttached) return;
+  mpInputsListenerAttached = true;
+  const { ref, onChildAdded, remove } = window.rtdbFns;
+  const inputsRef = ref(window.rtdb, `lobbies/${mpState.lobbyId}/inputs`);
+  onChildAdded(inputsRef, snapshot => {
+    const input = snapshot.val();
+    if(input) mpHostProcessInput(input);
+    remove(snapshot.ref);
+  });
+}
+
+function mpHostProcessInput(input){
+  const infinite = cfg.infiniteGold;
+  if(input.type === "buyArrows"){
+    if(infinite || gold >= UNIT_COSTS.arrow*input.qty){
+      if(!infinite) gold -= UNIT_COSTS.arrow*input.qty;
+      units.forEach(u=>{ if(u.type==="archer") u.maxArrows += 40*input.qty; });
+    }
+    return;
+  }
+  if(input.type === "buy"){
+    const totalCost = UNIT_COSTS[input.unitType]*input.qty;
+    if(infinite || gold >= totalCost){ if(!infinite) gold -= totalCost; }
+    return;
+  }
+  if(input.type === "place"){
+    if(placementBlocked(input.unitType, input.x, input.y)) return;
+    const u = buildUnit(input.unitType, input.x, input.y);
+    if(u) units.push(u);
+  }
+}
+
+// ----- GAST: eigene Käufe/Platzierungen als Inputs an den Host senden -----
+function mpSendInput(input){
+  const { ref, push } = window.rtdbFns;
+  push(ref(window.rtdb, `lobbies/${mpState.lobbyId}/inputs`), { uid: mpState.uid, ...input });
+}
+
+function mpGuestBuy(type){
+  const infinite = cfg.infiniteGold;
+  if(type==="arrow"){
+    if(infinite || gold >= UNIT_COSTS.arrow*buyQuantity){
+      mpSendInput({ type:"buyArrows", qty: buyQuantity });
+      closeShop();
+    } else { canvas.style.outline="3px solid gold"; setTimeout(()=>canvas.style.outline="none",400); }
+    return;
+  }
+  const totalCost = UNIT_COSTS[type]*buyQuantity;
+  if(infinite || gold >= totalCost){
+    mpSendInput({ type:"buy", unitType:type, qty: buyQuantity });
+    placing = type; placingCount = buyQuantity;
+    closeShop();
+  } else {
+    canvas.style.outline="3px solid gold"; setTimeout(()=>canvas.style.outline="none",400);
+  }
+}
+
+function mpGuestPlace(x, y){
+  if(placementBlocked(placing, x, y)){
+    canvas.style.outline="3px solid red"; setTimeout(()=>canvas.style.outline="none",300); return;
+  }
+  mpSendInput({ type:"place", unitType: placing, x, y });
+  placingCount--; if(placingCount<=0){ placing=null; placingCount=1; }
+}
+
+// ----- HOST: eigenen Zustand periodisch an alle Mitspieler senden -----
+function mpBroadcastState(){
+  const now = Date.now();
+  if(now - mpLastBroadcast < 120) return;
+  mpLastBroadcast = now;
+  const { ref, update } = window.rtdbFns;
+  update(ref(window.rtdb, `lobbies/${mpState.lobbyId}`), {
+    state: {
+      castleHp: castle.hp, gold, timeSurvived, phase, phaseTimer, gameOver,
+      isNight, bossMessage, bossMessageTimer,
+      units, enemies, arrows, enemyArrows, bombs, toxicBalls, iceBalls, healPotions
+    }
+  }).catch(err => console.error("MP Broadcast Fehler:", err));
+}
+
+// ----- GAST: empfangenen Host-Zustand in die lokalen Render-Variablen übernehmen -----
+function mpApplyRemoteState(state){
+  if(!state) return;
+  castle.hp = state.castleHp ?? castle.hp;
+  gold = state.gold ?? gold;
+  timeSurvived = state.timeSurvived ?? timeSurvived;
+  phase = state.phase ?? phase;
+  phaseTimer = state.phaseTimer ?? phaseTimer;
+  isNight = state.isNight ?? isNight;
+  bossMessage = state.bossMessage ?? bossMessage;
+  bossMessageTimer = state.bossMessageTimer ?? bossMessageTimer;
+  units = state.units || [];
+  enemies = state.enemies || [];
+  arrows = state.arrows || [];
+  enemyArrows = state.enemyArrows || [];
+  bombs = state.bombs || [];
+  toxicBalls = state.toxicBalls || [];
+  iceBalls = state.iceBalls || [];
+  healPotions = state.healPotions || [];
+  if(state.gameOver && !gameOver){ gameOver = true; triggerGameOver(); }
+}
 
 function openChestShop(){
   renderChestStockUI();
@@ -1857,8 +2225,31 @@ function setQty(n){
     document.getElementById("qty"+v).style.color      = v===n?"black":"";
   });
 }
+const UNIT_COSTS={knight:75,shield:110,archer:120,bombo:600,arrow:50,builder:150,spear:250,sniper:650,doctor:350,wall_brick:250,wall_stone:400,wall_granite:500,wall_basalt:600};
+const WALL_HP={wall_brick:250,wall_stone:400,wall_granite:500,wall_basalt:600};
+
+function buildUnit(type,x,y){
+  if(type==="knight") return {type:"knight",x,y,baseX:x,baseY:y,hp:getUnitStat("knight","hp"),maxHp:getUnitStat("knight","hp"),dmg:getUnitStat("knight","dmg"),range:28,sight:200,speed:getUnitStat("knight","speed"),cd:0,angle:Math.random()*6};
+  if(type==="shield") return {type:"shield",x,y,baseX:x,baseY:y,hp:getUnitStat("shield","hp"),maxHp:getUnitStat("shield","hp"),dmg:getUnitStat("shield","dmg"),range:28,sight:200,speed:getUnitStat("shield","speed"),cd:0,angle:Math.random()*6};
+  if(type==="archer") return {type:"archer",x,y,baseX:x,baseY:y,hp:getUnitStat("archer","hp"),maxHp:getUnitStat("archer","hp"),dmg:getUnitStat("archer","dmg"),range:220,sight:260,speed:getUnitStat("archer","speed"),cd:0,angle:Math.random()*6,maxArrows:0};
+  if(type==="sniper") return {type:"sniper",x,y,baseX:x,baseY:y,hp:getUnitStat("sniper","hp"),maxHp:getUnitStat("sniper","hp"),dmg:getUnitStat("sniper","dmg"),range:420,sight:450,speed:getUnitStat("sniper","speed"),cd:0,angle:Math.random()*6,aiming:false,aimTimer:0};
+  if(type==="bombo") return {type:"bombo",x,y,hp:getUnitStat("bombo","hp"),maxHp:getUnitStat("bombo","hp"),speed:getUnitStat("bombo","speed"),sight:260,placeDist:70,cd:0,bombsPlaced:0,maxBombs:4};
+  if(type==="spear") return {type:"spear",x,y,baseX:x,baseY:y,hp:getUnitStat("spear","hp"),maxHp:getUnitStat("spear","hp"),dmg:getUnitStat("spear","dmg"),range:55,sight:240,speed:getUnitStat("spear","speed"),cd:0,angle:Math.random()*6};
+  if(type==="builder") return {type:"builder",x,y,baseX:x,baseY:y,hp:getUnitStat("builder","hp"),maxHp:getUnitStat("builder","hp"),repair:getUnitStat("builder","repair"),cd:0,angle:Math.random()*6};
+  if(type==="doctor") return {type:"doctor",x,y,baseX:x,baseY:y,hp:getUnitStat("doctor","hp"),maxHp:getUnitStat("doctor","hp"),throwSpeed:getUnitStat("doctor","speed"),radius:getUnitStat("doctor","radius"),cd:0,angle:Math.random()*6};
+  if(type && type.startsWith("wall")) return {type,x,y,hp:WALL_HP[type],maxHp:WALL_HP[type],speed:0,isWall:true};
+  return null;
+}
+function placementBlocked(type,x,y){
+  const minDist=type.startsWith("wall")?40:35;
+  for(const u of units){ if(Math.hypot(u.x-x,u.y-y)<minDist) return true; }
+  if(Math.hypot(castle.x-x,castle.y-y)<castle.r+10) return true;
+  return false;
+}
+
 function buy(type){
-  const cost={knight:75,shield:110,archer:120,bombo:600,arrow:50,builder:150,spear:250,sniper:650,doctor:350,wall_brick:250,wall_stone:400,wall_granite:500,wall_basalt:600};
+  if(mpActive && !mpIsHost){ mpGuestBuy(type); return; }
+  const cost=UNIT_COSTS;
   const infinite = cfg.infiniteGold;
   if(type==="arrow" && (infinite || gold>=cost.arrow)){
     if(!infinite) gold-=cost.arrow*buyQuantity;
@@ -1872,28 +2263,12 @@ const totalCost=cost[type]*buyQuantity;
 
 canvas.addEventListener("pointerdown", e=>{
   if(!placing) return;
-  const minDist=placing.startsWith("wall")?40:35;
-  for(const u of units){
-    if(Math.hypot(u.x-e.clientX,u.y-e.clientY)<minDist){
-      canvas.style.outline="3px solid red"; setTimeout(()=>canvas.style.outline="none",300); return;
-    }
-  }
-  if(Math.hypot(castle.x-e.clientX,castle.y-e.clientY)<castle.r+10){
+  if(mpActive && !mpIsHost){ mpGuestPlace(e.clientX, e.clientY); return; }
+  if(placementBlocked(placing, e.clientX, e.clientY)){
     canvas.style.outline="3px solid red"; setTimeout(()=>canvas.style.outline="none",300); return;
   }
-if(placing==="knight") units.push({type:"knight",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("knight","hp"),maxHp:getUnitStat("knight","hp"),dmg:getUnitStat("knight","dmg"),range:28,sight:200,speed:getUnitStat("knight","speed"),cd:0,angle:Math.random()*6});
-if(placing==="shield") units.push({type:"shield",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("shield","hp"),maxHp:getUnitStat("shield","hp"),dmg:getUnitStat("shield","dmg"),range:28,sight:200,speed:getUnitStat("shield","speed"),cd:0,angle:Math.random()*6});
-if(placing==="archer") units.push({type:"archer",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("archer","hp"),maxHp:getUnitStat("archer","hp"),dmg:getUnitStat("archer","dmg"),range:220,sight:260,speed:getUnitStat("archer","speed"),cd:0,angle:Math.random()*6,maxArrows:0});
-if(placing==="sniper") units.push({type:"sniper",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("sniper","hp"),maxHp:getUnitStat("sniper","hp"),dmg:getUnitStat("sniper","dmg"),range:420,sight:450,speed:getUnitStat("sniper","speed"),cd:0,angle:Math.random()*6,aiming:false,aimTimer:0});
-if(placing==="bombo") units.push({type:"bombo",x:e.clientX,y:e.clientY,hp:getUnitStat("bombo","hp"),maxHp:getUnitStat("bombo","hp"),speed:getUnitStat("bombo","speed"),sight:260,placeDist:70,cd:0,bombsPlaced:0,maxBombs:4});
-if(placing==="spear") units.push({type:"spear",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("spear","hp"),maxHp:getUnitStat("spear","hp"),dmg:getUnitStat("spear","dmg"),range:55,sight:240,speed:getUnitStat("spear","speed"),cd:0,angle:Math.random()*6});
-if(placing==="builder") units.push({type:"builder",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("builder","hp"),maxHp:getUnitStat("builder","hp"),repair:getUnitStat("builder","repair"),cd:0,angle:Math.random()*6});
-if(placing==="doctor") units.push({type:"doctor",x:e.clientX,y:e.clientY,baseX:e.clientX,baseY:e.clientY,hp:getUnitStat("doctor","hp"),maxHp:getUnitStat("doctor","hp"),throwSpeed:getUnitStat("doctor","speed"),radius:getUnitStat("doctor","radius"),cd:0,angle:Math.random()*6});
-  if(placing && placing.startsWith("wall")){
-    const data={wall_brick:{hp:250},wall_stone:{hp:400},wall_granite:{hp:500},wall_basalt:{hp:600}};
-    units.push({type:placing,x:e.clientX,y:e.clientY,hp:data[placing].hp,maxHp:data[placing].hp,speed:0,isWall:true});
-    placingCount--; if(placingCount<=0){placing=null;placingCount=1;} return;
-  }
+  const u = buildUnit(placing, e.clientX, e.clientY);
+  if(u) units.push(u);
   placingCount--; if(placingCount<=0){placing=null;placingCount=1;}
 });
 
@@ -2381,8 +2756,25 @@ function endRun(){
   closeModeSelect();
 }
 
+function mpEndMatch(){
+  if(!mpActive) return;
+  if(mpRoomUnsub){ mpRoomUnsub(); mpRoomUnsub = null; }
+  if(mpIsHost && mpState){
+    const { ref, remove } = window.rtdbFns;
+    remove(ref(window.rtdb, `lobbies/${mpState.lobbyId}`)).catch(()=>{});
+  } else if(mpState){
+    const { ref, remove } = window.rtdbFns;
+    remove(ref(window.rtdb, `lobbies/${mpState.lobbyId}/players/${mpState.uid}`)).catch(()=>{});
+  }
+  mpActive = false;
+  mpIsHost = false;
+  mpInputsListenerAttached = false;
+  mpState = null;
+}
+
 function backToMenuFromGameOver(){
   document.getElementById("gameOverOverlay").style.display = "none";
+  if(mpActive) mpEndMatch();
   exitToMenu();
 }
 
@@ -2395,7 +2787,16 @@ document.getElementById("gemText").textContent = gems;
 document.getElementById("ticketText").textContent = tickets;
 document.getElementById("diamondText").textContent = diamonds;
 updateArmoryVisibility();
-(function loop(){ update(); draw(); requestAnimationFrame(loop); })();
+(function loop(){
+  if(mpActive && !mpIsHost){
+    draw(); // Gast: nur rendern, Zustand kommt vom Host über RTDB
+  } else {
+    update();
+    draw();
+    if(mpActive && mpIsHost) mpBroadcastState();
+  }
+  requestAnimationFrame(loop);
+})();
 </script>
 </body>
 </html>
