@@ -293,7 +293,7 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
   import { getDatabase, ref, set, update, get, push, remove, onValue, onDisconnect, off, serverTimestamp as rtdbServerTimestamp, onChildAdded } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
 
   const firebaseConfig = {
-    apiKey: "AIzaSyB_xCeqj8_CqpLL8rXB3MWrkIsGWC5scdU",
+    apiKey: "AIzaSyCvGpPqYtUXL3thvJHTHyAGlM_NEM_fhfk",
     authDomain: "war-of-cubes.firebaseapp.com",
     projectId: "war-of-cubes",
     storageBucket: "war-of-cubes.firebasestorage.app",
@@ -574,7 +574,7 @@ button { margin-top:6px; padding:6px 10px; cursor:pointer; }
       <button id="buyBtn_chest_holz" onclick="buyChest('holz',20)">20 🪙</button>
     </div>
     <div style="display:flex; align-items:center; gap:16px; background:rgba(255,255,255,0.1); padding:10px; border-radius:4px;">
-      <img src="Kiste_eisen.png" width="100" height="68">
+      <img src="Kiste_Eisen.png" width="100" height="68">
       <div style="flex:1">Eisenkiste<br><small>Mittelmäßig</small><br><small id="stock_eisen"></small></div>
       <button id="buyBtn_chest_eisen" onclick="buyChest('eisen',55)">55 🪙</button>
     </div>
@@ -1070,6 +1070,7 @@ function startGame(){
     document.getElementById("menuBtn").style.display = "block";
     document.getElementById("coinText").textContent = coins;
     gameStarted = true;
+    centerCameraOnCastle();
   }, 500);
 }
 
@@ -1298,6 +1299,7 @@ function beginMultiplayerMatch(lobbyData){
       mpAttachInputListener();
     }
     gameStarted = true;
+    centerCameraOnCastle();
 
     overlay.style.opacity = "0";
     setTimeout(()=>{ overlay.style.display = "none"; }, 800);
@@ -1374,7 +1376,7 @@ function mpGuestPlace(x, y){
 // ----- HOST: eigenen Zustand periodisch an alle Mitspieler senden -----
 function mpBroadcastState(){
   const now = Date.now();
-  if(now - mpLastBroadcast < 90) return;
+  if(now - mpLastBroadcast < 35) return;
   mpLastBroadcast = now;
   const { ref, update } = window.rtdbFns;
   update(ref(window.rtdb, `lobbies/${mpState.lobbyId}`), {
@@ -1764,37 +1766,52 @@ canvas.height = innerHeight;
 ctx.imageSmoothingEnabled = false;
 const stats = document.getElementById("stats");
 
-function resizeCanvas(){
-  const oldCX = canvas.width / 2;
-  const oldCY = canvas.height / 2;
+// ===== FESTE SPIELWELT (gleich für alle Spieler, unabhängig von Bildschirmgröße) =====
+const WORLD_W = 1600, WORLD_H = 900;
+let camera = { x: 0, y: 0 };
 
+function clampCamera(){
+  camera.x = Math.max(0, Math.min(camera.x, Math.max(0, WORLD_W - canvas.width)));
+  camera.y = Math.max(0, Math.min(camera.y, Math.max(0, WORLD_H - canvas.height)));
+}
+// Wandelt Bildschirm-/Touch-Koordinaten in feste Welt-Koordinaten um
+function screenToWorld(clientX, clientY){
+  return { x: clientX + camera.x, y: clientY + camera.y };
+}
+// Zentriert die Kamera auf die Burg (z.B. bei Rundenstart)
+function centerCameraOnCastle(){
+  camera.x = castle.x - canvas.width/2;
+  camera.y = castle.y - canvas.height/2;
+  clampCamera();
+}
+
+function resizeCanvas(){
   canvas.width = innerWidth;
   canvas.height = innerHeight;
   ctx.imageSmoothingEnabled = false;
-
-  const newCX = canvas.width / 2;
-  const newCY = canvas.height / 2;
-  const dx = newCX - oldCX;
-  const dy = newCY - oldCY;
-
-  if(dx !== 0 || dy !== 0){
-    castle.x += dx; castle.y += dy;
-
-    units.forEach(u=>{ u.x+=dx; u.y+=dy; if(u.baseX!==undefined){u.baseX+=dx; u.baseY+=dy;} });
-    enemies.forEach(e=>{ e.x+=dx; e.y+=dy; });
-    arrows.forEach(a=>{ a.x+=dx; a.y+=dy; });
-    enemyArrows.forEach(a=>{ a.x+=dx; a.y+=dy; });
-    bombs.forEach(b=>{ b.x+=dx; b.y+=dy; });
-    toxicBalls.forEach(b=>{ b.x+=dx; b.y+=dy; });
-    iceBalls.forEach(b=>{ b.x+=dx; b.y+=dy; });
-    healPotions.forEach(p=>{ p.x+=dx; p.y+=dy; p.tx+=dx; p.ty+=dy; });
-    particles.forEach(p=>{ p.x+=dx; p.y+=dy; });
-    shards.forEach(s=>{ s.x+=dx; s.y+=dy; });
-  }
+  clampCamera();
 }
 window.addEventListener("resize", resizeCanvas);
 document.addEventListener("fullscreenchange", resizeCanvas);
 document.addEventListener("webkitfullscreenchange", resizeCanvas);
+
+// ===== KAMERA PER DRAG SCROLLEN (nur wenn gerade nichts platziert wird) =====
+let panActive = false, panLastX = 0, panLastY = 0, panMoved = false;
+canvas.addEventListener("pointerdown", e=>{
+  if(placing) return; // beim Platzieren nicht scrollen, das übernimmt der andere Listener
+  panActive = true; panMoved = false;
+  panLastX = e.clientX; panLastY = e.clientY;
+});
+canvas.addEventListener("pointermove", e=>{
+  if(!panActive) return;
+  const dx = e.clientX - panLastX, dy = e.clientY - panLastY;
+  if(Math.abs(dx) > 3 || Math.abs(dy) > 3) panMoved = true;
+  camera.x -= dx; camera.y -= dy;
+  clampCamera();
+  panLastX = e.clientX; panLastY = e.clientY;
+});
+window.addEventListener("pointerup", ()=>{ panActive = false; });
+window.addEventListener("pointercancel", ()=>{ panActive = false; });
 
 function load(src){ const i=new Image(); i.src=src; return i; }
 
@@ -2237,7 +2254,7 @@ function updateArmoryVisibility(){
 }
 
 //____________________________<<<<<<<
-const castle={ x:canvas.width/2, y:canvas.height/2, r:70, hp:1000, maxHp:1500 };
+const castle={ x:WORLD_W/2, y:WORLD_H/2, r:70, hp:1000, maxHp:1500 };
 let units=[], enemies=[], arrows=[], enemyArrows=[], bombs=[], particles=[], toxicBalls=[], iceBalls=[], shards=[], healPotions=[];
 
 function openShop(){ shop.style.display="block"; }
@@ -2290,28 +2307,29 @@ const totalCost=cost[type]*buyQuantity;
 
 canvas.addEventListener("pointerdown", e=>{
   if(!placing) return;
-  if(mpActive && !mpIsHost){ mpGuestPlace(e.clientX, e.clientY); return; }
-  if(placementBlocked(placing, e.clientX, e.clientY)){
+  const w = screenToWorld(e.clientX, e.clientY);
+  if(mpActive && !mpIsHost){ mpGuestPlace(w.x, w.y); return; }
+  if(placementBlocked(placing, w.x, w.y)){
     canvas.style.outline="3px solid red"; setTimeout(()=>canvas.style.outline="none",300); return;
   }
-  const u = buildUnit(placing, e.clientX, e.clientY);
+  const u = buildUnit(placing, w.x, w.y);
   if(u) units.push(u);
   placingCount--; if(placingCount<=0){placing=null;placingCount=1;}
 });
 
 
-function spawnEnemy(){ enemies.push({type:"normal",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:(40+timeSurvived*0.1)*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult}); }
-function spawnFighter(){ enemies.push({type:"fighter",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:60*cfg.enemyHpMult,speed:0.6*cfg.enemySpeedMult,basespeed:0.6*cfg.enemySpeedMult,dmg:15*cfg.enemyDmgMult,cd:0}); }
-function spawnEnemyBombo(){ enemies.push({type:"enemyBombo",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:50*cfg.enemyHpMult,speed:1.1*cfg.enemySpeedMult,basespeed:1.1*cfg.enemySpeedMult}); }
-function spawnIceMage(){ enemies.push({type:"iceMage",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:65*cfg.enemyHpMult,speed:0.45*cfg.enemySpeedMult,baseSpeed:0.45*cfg.enemySpeedMult,range:260,dmg:10*cfg.enemyDmgMult,cd:0}); }
-function spawnElite(){ enemies.push({type:"elite",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:120*cfg.enemyHpMult,speed:0.9*cfg.enemySpeedMult,basespeed:0.9*cfg.enemySpeedMult,dmg:22*cfg.enemyDmgMult,cd:0}); }
-function spawnToxic(){ enemies.push({type:"toxic",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:70*cfg.enemyHpMult,speed:0.5*cfg.enemySpeedMult,basespeed:0.5*cfg.enemySpeedMult,range:260,dmg:8*cfg.enemyDmgMult,cd:0}); }
-function spawnDasher(){ enemies.push({type:"dasher",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:45*cfg.enemyHpMult,speed:0.7*cfg.enemySpeedMult,basespeed:0.7*cfg.enemySpeedMult,dashSpeed:4*cfg.enemySpeedMult,dmg:18*cfg.enemyDmgMult,cd:0}); }
-function spawnSlime(){ enemies.push({type:"slime",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:80*cfg.enemyHpMult,maxHp:80*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,basespeed:0.4*cfg.enemySpeedMult}); }
-function spawnRedBoss(){ enemies.push({type:"red_boss",x:Math.random()<0.5?-60:canvas.width+60,y:Math.random()*canvas.height,hp:12000*cfg.enemyHpMult,maxHp:12000*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,baseSpeed:0.4*cfg.enemySpeedMult,dmg:45*cfg.enemyDmgMult,baseDamage:45*cfg.enemyDmgMult,cd:0,isAttacking:false,attackTimer:0,ragePhase:0,areaCD:0}); bossAlive=true; }
-function spawnEnemyArcher(){ enemies.push({type:"enemyArcher",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:45*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,range:240,dmg:12*cfg.enemyDmgMult,cd:0}); }
+function spawnEnemy(){ enemies.push({type:"normal",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:(40+timeSurvived*0.1)*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult}); }
+function spawnFighter(){ enemies.push({type:"fighter",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:60*cfg.enemyHpMult,speed:0.6*cfg.enemySpeedMult,basespeed:0.6*cfg.enemySpeedMult,dmg:15*cfg.enemyDmgMult,cd:0}); }
+function spawnEnemyBombo(){ enemies.push({type:"enemyBombo",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:50*cfg.enemyHpMult,speed:1.1*cfg.enemySpeedMult,basespeed:1.1*cfg.enemySpeedMult}); }
+function spawnIceMage(){ enemies.push({type:"iceMage",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:65*cfg.enemyHpMult,speed:0.45*cfg.enemySpeedMult,baseSpeed:0.45*cfg.enemySpeedMult,range:260,dmg:10*cfg.enemyDmgMult,cd:0}); }
+function spawnElite(){ enemies.push({type:"elite",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:120*cfg.enemyHpMult,speed:0.9*cfg.enemySpeedMult,basespeed:0.9*cfg.enemySpeedMult,dmg:22*cfg.enemyDmgMult,cd:0}); }
+function spawnToxic(){ enemies.push({type:"toxic",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:70*cfg.enemyHpMult,speed:0.5*cfg.enemySpeedMult,basespeed:0.5*cfg.enemySpeedMult,range:260,dmg:8*cfg.enemyDmgMult,cd:0}); }
+function spawnDasher(){ enemies.push({type:"dasher",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:45*cfg.enemyHpMult,speed:0.7*cfg.enemySpeedMult,basespeed:0.7*cfg.enemySpeedMult,dashSpeed:4*cfg.enemySpeedMult,dmg:18*cfg.enemyDmgMult,cd:0}); }
+function spawnSlime(){ enemies.push({type:"slime",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:80*cfg.enemyHpMult,maxHp:80*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,basespeed:0.4*cfg.enemySpeedMult}); }
+function spawnRedBoss(){ enemies.push({type:"red_boss",x:Math.random()<0.5?-60:WORLD_W+60,y:Math.random()*WORLD_H,hp:12000*cfg.enemyHpMult,maxHp:12000*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,baseSpeed:0.4*cfg.enemySpeedMult,dmg:45*cfg.enemyDmgMult,baseDamage:45*cfg.enemyDmgMult,cd:0,isAttacking:false,attackTimer:0,ragePhase:0,areaCD:0}); bossAlive=true; }
+function spawnEnemyArcher(){ enemies.push({type:"enemyArcher",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:45*cfg.enemyHpMult,speed:0.4*cfg.enemySpeedMult,range:240,dmg:12*cfg.enemyDmgMult,cd:0}); }
 function spawnLaserDrone(){
-  enemies.push({type:"laserDrone",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,
+  enemies.push({type:"laserDrone",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,
     hp:65*cfg.enemyHpMult,speed:0.5*cfg.enemySpeedMult,
     dmg:6*cfg.enemyDmgMult,healAmount:5,
     beamActive:false,beamType:null,beamTX:0,beamTY:0});
@@ -2350,7 +2368,7 @@ function shatterUnit(u){
   const size=u.type.startsWith("wall")?48:32;
   shatterSprite(key, u.x, u.y, size);
 }
-function spawnBanner(){ enemies.push({type:"banner",x:Math.random()<0.5?-40:canvas.width+40,y:Math.random()*canvas.height,hp:180,speed:0.4,aura:140}); }
+function spawnBanner(){ enemies.push({type:"banner",x:Math.random()<0.5?-40:WORLD_W+40,y:Math.random()*WORLD_H,hp:180,speed:0.4,aura:140}); }
 
 function formatTime(sec){
   const m = Math.floor(sec/60);
@@ -2661,7 +2679,9 @@ units=units.filter(u=>{if(u.hp<=0){shatterUnit(u);for(let i=0;i<20;i++)particles
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!gameStarted)return;
-  for(let x=0;x<canvas.width;x+=64) for(let y=0;y<canvas.height;y+=64) ctx.drawImage(TEX.grass,x,y,72,72);
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+  for(let x=0;x<WORLD_W;x+=64) for(let y=0;y<WORLD_H;y+=64) ctx.drawImage(TEX.grass,x,y,72,72);
   ctx.drawImage(TEX.castle,castle.x-64,castle.y-64,128,128);
 toxicBalls.forEach(b=>{ctx.drawImage(TEX.toxicBall,b.x-8,b.y-8,16,16);});
   iceBalls.forEach(b=>{ctx.drawImage(TEX.iceBall,b.x-8,b.y-8,16,16);});
@@ -2678,14 +2698,6 @@ toxicBalls.forEach(b=>{ctx.drawImage(TEX.toxicBall,b.x-8,b.y-8,16,16);});
     ctx.drawImage(img,e.x-size/2,e.y-size/2,size,size);
   });
   const boss=enemies.find(e=>e.type==="red_boss");
-  if(boss){
-    const bw=400,bh=20,bx=canvas.width/2-bw/2,by=20;
-    ctx.fillStyle="#400";ctx.fillRect(bx,by,bw,bh);
-    ctx.fillStyle="#ff3333";ctx.fillRect(bx,by,bw*(boss.hp/boss.maxHp),bh);
-    ctx.strokeStyle="#fff";ctx.strokeRect(bx,by,bw,bh);
-    ctx.fillStyle="#fff";ctx.font="16px Arial";ctx.textAlign="center";
-    ctx.fillText("RED BOSS",canvas.width/2,by-5);
-  }
   bombs.forEach(b=>ctx.drawImage(TEX.bomb,b.x-12,b.y-12,24,24));
   enemies.forEach(e=>{
     if(e.type==="laserDrone" && e.beamActive){
@@ -2709,8 +2721,17 @@ toxicBalls.forEach(b=>{ctx.drawImage(TEX.toxicBall,b.x-8,b.y-8,16,16);});
     ctx.restore();
   });
   ctx.globalAlpha=1;
+  ctx.restore(); // ==== Ende Weltkoordinaten, ab hier wieder Bildschirmkoordinaten (HUD) ====
   if(isNight){ctx.fillStyle="rgba(0,0,50,0.35)";ctx.fillRect(0,0,canvas.width,canvas.height);}
   ctx.drawImage(isNight?TEX.moon:TEX.sun,canvas.width-70,20,48,48);
+  if(boss){
+    const bw=400,bh=20,bx=canvas.width/2-bw/2,by=20;
+    ctx.fillStyle="#400";ctx.fillRect(bx,by,bw,bh);
+    ctx.fillStyle="#ff3333";ctx.fillRect(bx,by,bw*(boss.hp/boss.maxHp),bh);
+    ctx.strokeStyle="#fff";ctx.strokeRect(bx,by,bw,bh);
+    ctx.fillStyle="#fff";ctx.font="16px Arial";ctx.textAlign="center";
+    ctx.fillText("RED BOSS",canvas.width/2,by-5);
+  }
   stats.innerText=
 `🏰 HP: ${Math.floor(castle.hp)}
 💰 Gold: ${gold}
@@ -2759,6 +2780,7 @@ function restartGame(){
   document.getElementById("ui").style.display="block";
   document.getElementById("menuBtn").style.display="block";
   gameStarted = true;
+  centerCameraOnCastle();
 }
 
 function resumeGame(){
@@ -2771,6 +2793,7 @@ function resumeGame(){
     document.getElementById("ui").style.display = "block";
     document.getElementById("menuBtn").style.display = "block";
     gameStarted = true;
+    centerCameraOnCastle();
   }, 500);
 }
 
